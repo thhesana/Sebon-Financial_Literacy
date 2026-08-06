@@ -1,0 +1,19 @@
+# Hide /public from the browser URL
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /Financial_Literacy/
+
+    # Redirect visible /public/... URLs to clean URLs
+    RewriteCond %{REQUEST_URI} ^/Financial_Literacy/public/(.*)$ [NC]
+    RewriteRule ^ /Financial_Literacy/%1 [R=301,L,QSA]
+
+    RewriteCond %{REQUEST_URI} ^/Financial_Literacy/public/?$ [NC]
+    RewriteRule ^ /Financial_Literacy/ [R=301,L,QSA]
+
+    # Internal map into Laravel public folder (URL stays clean)
+    RewriteRule ^public/ - [L]
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+DirectoryIndex public/index.php index.php

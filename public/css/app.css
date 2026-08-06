@@ -1,0 +1,102 @@
+:root {
+    --primary: #003366;
+    --primary-light: #004488;
+    --primary-dark: #001a33;
+    --secondary: #64748b;
+    --text-dark: #1e293b;
+    --text-light: #f8fafc;
+    --background: #f1f5f9;
+    --white: #ffffff;
+    --error: #ef4444;
+    --success: #10b981;
+    --border-radius: 12px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+    --shadow-md: 0 10px 20px rgba(0,0,0,0.15);
+}
+
+* {
+    box-sizing: border-box;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background: var(--background);
+    color: var(--text-dark);
+}
+
+/* ---------- Navbar / Header ---------- */
+.navbar-sebon {
+    background: var(--primary);
+}
+
+.navbar-sebon .navbar-brand,
+.navbar-sebon .nav-link {
+    color: var(--text-light) !important;
+}
+
+/* ---------- Cards ---------- */
+.card-sebon {
+    background: var(--white);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    border: none;
+}
+
+/* ---------- Buttons ---------- */
+.btn-sebon {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--white);
+}
+
+.btn-sebon:hover {
+    background: var(--primary-light);
+    border-color: var(--primary-light);
+    color: var(--white);
+}
+
+/* ---------- Login / Auth pages ---------- */
+.auth-wrapper {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary);
+    background-image: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+}
+
+.auth-card {
+    background: var(--white);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-md);
+    width: 100%;
+    max-width: 400px;
+    padding: 2.5rem;
+}
+
+.auth-card h1 {
+    color: var(--primary);
+    font-size: 1.4rem;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 0.25rem;
+}
+
+.auth-card .subtitle {
+    text-align: center;
+    color: var(--secondary);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+.auth-card .logo {
+    max-width: 160px;
+    display: block;
+    margin: 0 auto 1rem;
+}
+
+/* ---------- Tables ---------- */
+.table-sebon thead {
+    background: var(--primary);
+    color: var(--white);
+}
