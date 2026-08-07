@@ -94,22 +94,46 @@
                 @foreach($section->questions as $question)
                     @php
                         $qid = $question->QuestionId;
-                        $existing = $answers[$qid] ?? null;
+                        $codeKey = strtoupper(trim((string) $question->QuestionCode));
+                        $existing = $answers[$qid] ?? ($codeKey !== '' ? ($answers[$codeKey] ?? null) : null);
                         $parentAttr = $question->ParentQuestionId ? ' data-parent-question="'.$question->ParentQuestionId.'" data-parent-trigger="'.$question->ParentTriggerOptionId.'"' : '';
                         $oldValue = old("answers.$qid");
                         $hasError = $errors->has("answers.$qid");
+
+                        // Match server-side optional safety net (Q4, Q10, Q11+, etc.)
+                        $codeNum = (preg_match('/^Q?(\d+)/i', $codeKey, $codeMatch)) ? (int) $codeMatch[1] : 0;
+                        $isKnownOptional = in_array($codeKey, ['1', 'Q1', '4', 'Q4', '5', 'Q5', '9A', '9B', '10', 'Q10'], true)
+                            || $codeNum >= 11;
+                        $isOptional = (! $question->IsRequired) || $isKnownOptional;
+                        $isRequiredUi = $question->IsRequired && ! $isKnownOptional;
+
+                        // Normalize previously saved option IDs for both multi and single.
+                        $selectedIds = [];
+                        if (is_array($oldValue)) {
+                            $selectedIds = array_map('intval', $oldValue);
+                        } elseif ($oldValue !== null && $oldValue !== '') {
+                            $selectedIds = [(int) $oldValue];
+                        } elseif (is_array($existing)) {
+                            if (! empty($existing['values']) && is_array($existing['values'])) {
+                                $selectedIds = array_map('intval', $existing['values']);
+                            } elseif (isset($existing['value']) && is_numeric($existing['value'])) {
+                                $selectedIds = [(int) $existing['value']];
+                            }
+                        }
                     @endphp
 
                     <div class="mb-4 question-block border-bottom pb-3 {{ $hasError ? 'is-invalid-question' : '' }}"
                          id="question-{{ $qid }}"
                          data-question-id="{{ $qid }}"
-                         data-required="{{ $question->IsRequired ? 1 : 0 }}"
+                         data-required="{{ $isRequiredUi ? 1 : 0 }}"
                          data-type="{{ $question->isMulti() ? 'multi' : ($question->isSingle() ? 'single' : 'text') }}"
                          {!! $parentAttr !!}>
                         <label class="form-label fw-semibold">
                             {{ $question->QuestionCode ? $question->QuestionCode.'. ' : '' }}{{ $question->QuestionText }}
-                            @if($question->IsRequired)
+                            @if($isRequiredUi)
                                 <span class="text-danger">*</span>
+                            @elseif($isOptional)
+                                <span class="text-muted fw-normal small">(optional — may leave blank{{ $question->isMulti() || $question->isSingle() ? ' or choose N/A' : '' }})</span>
                             @endif
                         </label>
 
@@ -117,13 +141,9 @@
                             <div class="option-grid option-group mt-2">
                                 @foreach($question->options as $option)
                                     @php
-                                        $checked = false;
-                                        if (is_array($oldValue)) {
-                                            $checked = in_array((string) $option->OptionId, array_map('strval', $oldValue), true);
-                                        } elseif ($existing && ($existing['type'] ?? '') === 'multi') {
-                                            $checked = in_array($option->OptionId, $existing['values'] ?? [], true);
-                                        }
-                                        $otherOld = old("other_text.$qid.{$option->OptionId}", $existing['other'][$option->OptionId] ?? '');
+                                        $checked = in_array((int) $option->OptionId, $selectedIds, true);
+                                        $otherOld = old("other_text.$qid.{$option->OptionId}", $existing['other'][$option->OptionId] ?? ($existing['other'][(int) $option->OptionId] ?? ''));
+                                        $isNa = (bool) preg_match('/^n\s*\/?\s*a$/i', trim((string) $option->OptionText));
                                     @endphp
                                     <label class="option-card {{ $checked ? 'is-selected' : '' }}" for="opt-{{ $option->OptionId }}">
                                         <input class="answer-option"
@@ -133,6 +153,7 @@
                                                value="{{ $option->OptionId }}"
                                                data-question="{{ $qid }}"
                                                data-allows-other="{{ $option->AllowsOtherText ? 1 : 0 }}"
+                                               data-is-na="{{ $isNa ? 1 : 0 }}"
                                                {{ $checked ? 'checked' : '' }}>
                                         <span class="option-indicator option-check" aria-hidden="true">
                                             <i class="bi bi-check-lg"></i>
@@ -152,17 +173,20 @@
                                     </label>
                                 @endforeach
                             </div>
+                            @if($isOptional)
+                                <button type="button"
+                                        class="btn btn-link btn-sm px-0 mt-1 clear-answer-btn"
+                                        data-question="{{ $qid }}">
+                                    Clear selection (leave blank)
+                                </button>
+                            @endif
                         @elseif($question->isSingle())
                             <div class="option-grid option-group mt-2">
                                 @foreach($question->options as $option)
                                     @php
-                                        $checked = false;
-                                        if ($oldValue !== null) {
-                                            $checked = (string) $oldValue === (string) $option->OptionId;
-                                        } elseif ($existing && ($existing['type'] ?? '') === 'single') {
-                                            $checked = (int) ($existing['value'] ?? 0) === (int) $option->OptionId;
-                                        }
-                                        $otherOld = old("other_text.$qid.{$option->OptionId}", $existing['other'][$option->OptionId] ?? '');
+                                        $checked = in_array((int) $option->OptionId, $selectedIds, true);
+                                        $otherOld = old("other_text.$qid.{$option->OptionId}", $existing['other'][$option->OptionId] ?? ($existing['other'][(int) $option->OptionId] ?? ''));
+                                        $isNa = (bool) preg_match('/^n\s*\/?\s*a$/i', trim((string) $option->OptionText));
                                     @endphp
                                     <label class="option-card {{ $checked ? 'is-selected' : '' }}" for="opt-{{ $option->OptionId }}">
                                         <input class="answer-option"
@@ -172,6 +196,7 @@
                                                value="{{ $option->OptionId }}"
                                                data-question="{{ $qid }}"
                                                data-allows-other="{{ $option->AllowsOtherText ? 1 : 0 }}"
+                                               data-is-na="{{ $isNa ? 1 : 0 }}"
                                                {{ $checked ? 'checked' : '' }}>
                                         <span class="option-indicator option-radio" aria-hidden="true"></span>
                                         <span class="option-body">
@@ -189,6 +214,13 @@
                                     </label>
                                 @endforeach
                             </div>
+                            @if($isOptional)
+                                <button type="button"
+                                        class="btn btn-link btn-sm px-0 mt-1 clear-answer-btn"
+                                        data-question="{{ $qid }}">
+                                    Clear selection (leave blank)
+                                </button>
+                            @endif
                         @elseif($question->isTextarea())
                             @php
                                 $textVal = is_string($oldValue) ? $oldValue : ($existing['value'] ?? '');
@@ -307,6 +339,39 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!changed.checked) other.value = '';
     }
 
+    function syncNaExclusivity(changed) {
+        if (changed.type !== 'checkbox' || !changed.checked) return;
+        var block = changed.closest('.question-block');
+        if (!block) return;
+        var isNa = changed.getAttribute('data-is-na') === '1';
+        block.querySelectorAll('input.answer-option[type="checkbox"]').forEach(function (cb) {
+            if (cb === changed) return;
+            if (isNa || cb.getAttribute('data-is-na') === '1') {
+                if (cb.checked) {
+                    cb.checked = false;
+                    syncCardState(cb);
+                    syncOtherInputs(cb);
+                }
+            }
+        });
+    }
+
+    function clearQuestionAnswer(questionId) {
+        var block = document.getElementById('question-' + questionId);
+        if (!block) return;
+        block.querySelectorAll('input.answer-option').forEach(function (el) {
+            el.checked = false;
+            syncCardState(el);
+            syncOtherInputs(el);
+        });
+        block.querySelectorAll('.other-text-input').forEach(function (el) {
+            el.value = '';
+            el.style.display = 'none';
+        });
+        block.classList.remove('is-invalid-question');
+        syncConditionalQuestions();
+    }
+
     document.querySelectorAll('.answer-option').forEach(function (el) {
         syncCardState(el);
 
@@ -315,6 +380,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (block) block.classList.remove('is-invalid-question');
 
             syncCardState(el);
+            syncNaExclusivity(el);
 
             if (el.type === 'radio') {
                 document.querySelectorAll('input[name="' + el.name + '"]').forEach(function (r) {
@@ -329,6 +395,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 syncOtherInputs(el);
             }
             syncConditionalQuestions();
+        });
+    });
+
+    document.querySelectorAll('.clear-answer-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            clearQuestionAnswer(btn.getAttribute('data-question'));
         });
     });
 

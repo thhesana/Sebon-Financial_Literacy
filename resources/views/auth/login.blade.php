@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Financial Literacy Login</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -112,7 +113,7 @@
             <div class="alert alert-danger py-2">{{ $errors->first() }}</div>
         @endif
 
-        <form method="POST" action="{{ route('login.post') }}">
+        <form method="POST" action="{{ route('login.post') }}" id="login-form" autocomplete="on">
             @csrf
             <div class="mb-3">
                 <label for="username" class="form-label">Username</label>
@@ -131,5 +132,13 @@
             <button type="submit" class="btn btn-primary w-100">Login</button>
         </form>
     </div>
+    <script>
+        // Reload if browser restores a cached login page (stale CSRF token → 419)
+        window.addEventListener('pageshow', function (event) {
+            if (event.persisted) {
+                window.location.reload();
+            }
+        });
+    </script>
 </body>
 </html>

@@ -89,7 +89,13 @@
                                 <select name="answers[{{ $qid }}][]"
                                         class="form-select form-select-sm"
                                         multiple
-                                        size="{{ min(5, max(3, $question->options->count())) }}">
+                                        size="{{ min(6, max(3, $question->options->count() + (!empty($question->allows_blank_filter) ? 1 : 0))) }}">
+                                    @if(!empty($question->allows_blank_filter))
+                                        <option value="__blank__"
+                                            {{ in_array('__blank__', array_map('strval', $selected), true) ? 'selected' : '' }}>
+                                            — Left blank —
+                                        </option>
+                                    @endif
                                     @foreach($question->options as $option)
                                         <option value="{{ $option->OptionId }}"
                                             {{ in_array((string) $option->OptionId, array_map('strval', $selected), true) ? 'selected' : '' }}>

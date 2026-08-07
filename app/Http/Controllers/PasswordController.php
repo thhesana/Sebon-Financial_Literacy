@@ -14,7 +14,12 @@ class PasswordController extends Controller
         if (!session('username')) {
             return redirect()->route('login');
         }
-        return view('auth.changepassword');
+
+        return response()
+            ->view('auth.changepassword')
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 
     // POST /changepassword

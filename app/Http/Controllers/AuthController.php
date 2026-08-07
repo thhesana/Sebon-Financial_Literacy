@@ -12,12 +12,18 @@ class AuthController extends Controller
     private const LOCKOUT_MINUTES = 15;
 
     // GET /  -> login page
-    public function showLoginForm()
+    public function showLoginForm(Request $request)
     {
         if (session('loggedin')) {
             return redirect()->route('dashboard');
         }
-        return view('auth.login');
+
+        // Avoid bfcache / stale CSRF tokens causing intermittent 419s
+        return response()
+            ->view('auth.login')
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 
     // POST /login
@@ -54,6 +60,7 @@ class AuthController extends Controller
 
         // Case 1: legacy plain-text password stored directly
         if ($user->password_hash === $password) {
+            $request->session()->regenerate();
             session(['username' => $user->username]);
             return redirect()->route('changepassword');
         }
@@ -65,6 +72,7 @@ class AuthController extends Controller
             $user->last_login = now();
             $user->save();
 
+            $request->session()->regenerate();
             session([
                 'loggedin' => true,
                 'user_id' => $user->user_id,

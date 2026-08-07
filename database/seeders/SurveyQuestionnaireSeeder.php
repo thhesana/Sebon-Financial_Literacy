@@ -70,52 +70,53 @@ class SurveyQuestionnaireSeeder extends Seeder
         };
 
         $add($sectionA, '1', 'Name of the participant (optional)', 'text', [], false);
-        $add($sectionA, '2', 'Gender', 'radio', ['Male', 'Female', 'Prefer not to say']);
-        $add($sectionA, '3', 'Age Group', 'radio', ['16–20', '21–25', '26–30', '31–35']);
+        $add($sectionA, '2', 'Gender', 'radio', ['Male', 'Female', 'Prefer not to say', 'N/A']);
+        $add($sectionA, '3', 'Age Group', 'radio', ['16–20', '21–25', '26–30', '31–35', 'N/A']);
         $add($sectionA, '4', 'Caste / Ethnicity', 'text', [], false);
         $add($sectionA, '5', 'Mother Tongue', 'text', [], false);
         $add($sectionA, '6', 'Highest Educational Qualification', 'radio', [
-            'SEE (Grade 10)', '10+2 / A-Level', "Bachelor's", "Master's or above",
+            'SEE (Grade 10)', '10+2 / A-Level', "Bachelor's", "Master's or above", 'N/A',
         ]);
         $add($sectionA, '7', 'Education Stream', 'radio', [
-            'Management / Commerce', 'Science', 'Humanities', ['text' => 'Others', 'other' => 1],
+            'Management / Commerce', 'Science', 'Humanities', ['text' => 'Others', 'other' => 1], 'N/A',
         ]);
         $add($sectionA, '8', 'Current Professional Status', 'radio', [
-            'Student', 'Employed', 'Self-Employed', 'Unemployed',
+            'Student', 'Employed', 'Self-Employed', 'Unemployed', 'N/A',
         ]);
         $add($sectionA, '9a', 'Profession of Parents — Father', 'text', [], false);
         $add($sectionA, '9b', 'Profession of Parents — Mother', 'text', [], false);
         $add($sectionA, '10', 'Is anyone of your family involved with foreign employment?', 'checkbox', [
-            'Father', 'Mother', 'Brother', 'Sister', ['text' => 'Other', 'other' => 1], 'None',
-        ]);
+            'Father', 'Mother', 'Brother', 'Sister', ['text' => 'Other', 'other' => 1], 'None', 'N/A',
+        ], false);
 
+        // Q11 onward: optional (may be left blank) and include an N/A choice.
         $add($sectionB, '11', 'Are you aware of the following entities? (Mark all that apply)', 'checkbox', [
-            'Nepal Rastra Bank (NRB)', 'SEBON', 'Nepal Stock Exchange (NEPSE)', 'CDSC / Meroshare', 'None of the above',
-        ]);
+            'Nepal Rastra Bank (NRB)', 'SEBON', 'Nepal Stock Exchange (NEPSE)', 'CDSC / Meroshare', 'None of the above', 'N/A',
+        ], false);
         $add($sectionB, '12', 'Have you opened any of the following accounts? (Mark all that apply)', 'checkbox', [
-            'Bank Account', 'Demat Account (D-Mat)', 'Trading Account', 'None',
-        ]);
+            'Bank Account', 'Demat Account (D-Mat)', 'Trading Account', 'None', 'N/A',
+        ], false);
         $add($sectionB, '13', 'Are you aware of the following financial instruments? (Mark all that apply)', 'checkbox', [
-            'IPO (Initial Public Offering)', 'Mutual Fund', 'Debenture / Bond', 'None of the above',
-        ]);
+            'IPO (Initial Public Offering)', 'Mutual Fund', 'Debenture / Bond', 'None of the above', 'N/A',
+        ], false);
         $add($sectionB, '14', 'Which of the following financial instruments is riskier?', 'radio', [
-            'IPO (Initial Public Offering)', 'Mutual Fund', 'Debenture / Bond', 'None of the above',
-        ]);
+            'IPO (Initial Public Offering)', 'Mutual Fund', 'Debenture / Bond', 'None of the above', 'N/A',
+        ], false);
         $add($sectionB, '15', 'Have you ever applied for any of the following? (Mark all that apply)', 'checkbox', [
-            'IPO', 'Mutual Fund', 'Debenture', 'None',
-        ]);
+            'IPO', 'Mutual Fund', 'Debenture', 'None', 'N/A',
+        ], false);
         $add($sectionB, '16', 'Which social media platform do you primarily use to get information about the capital market? (Mark all that apply)', 'checkbox', [
-            'Facebook', 'TikTok', 'YouTube', ['text' => 'Others', 'other' => 1],
-        ]);
+            'Facebook', 'TikTok', 'YouTube', ['text' => 'Others', 'other' => 1], 'N/A',
+        ], false);
         $add($sectionB, '17', 'Which alternative source do you use to get information about the capital market? (Mark all that apply)', 'checkbox', [
-            'Television / Radio', 'Newspaper / Magazines', 'Family / Friends', 'School / College', 'SEBON / NEPSE Website',
-        ]);
+            'Television / Radio', 'Newspaper / Magazines', 'Family / Friends', 'School / College', 'SEBON / NEPSE Website', 'N/A',
+        ], false);
         $add($sectionB, '18', 'Does your school / college conduct classes or programs on financial literacy?', 'radio', [
-            'Yes', 'No', 'Not sure',
-        ]);
+            'Yes', 'No', 'Not sure', 'N/A',
+        ], false);
         $q19 = $add($sectionB, '19', 'Have you previously attended any financial literacy program or training?', 'radio', [
-            'Yes', 'No',
-        ]);
+            'Yes', 'No', 'N/A',
+        ], false);
         $yesOptionId = DB::table('SurveyQuestionOption')
             ->where('QuestionId', $q19)
             ->where('OptionText', 'Yes')
@@ -123,23 +124,23 @@ class SurveyQuestionnaireSeeder extends Seeder
         $add($sectionB, '19a', 'If Yes, conducted by', 'text', [], false, $q19, $yesOptionId);
 
         $add($sectionC, '20', 'How would you rate your overall knowledge of the capital market?', 'radio', [
-            'No knowledge', 'Basic knowledge', 'Moderate knowledge', 'Advanced knowledge',
-        ]);
+            'No knowledge', 'Basic knowledge', 'Moderate knowledge', 'Advanced knowledge', 'N/A',
+        ], false);
         $add($sectionC, '21', 'Do you know the primary function of the Nepal Stock Exchange (NEPSE)?', 'radio', [
-            'Yes, clearly', 'Somewhat', 'No',
-        ]);
+            'Yes, clearly', 'Somewhat', 'No', 'N/A',
+        ], false);
         $add($sectionC, '22', 'Have you ever bought or sold shares listed on NEPSE?', 'radio', [
-            'Yes', 'No, but I plan to', 'No, and I have no plans to',
-        ]);
+            'Yes', 'No, but I plan to', 'No, and I have no plans to', 'N/A',
+        ], false);
         $add($sectionC, '23', 'Do you understand the difference between primary and secondary markets?', 'radio', [
-            'Yes', 'Somewhat', 'No',
-        ]);
+            'Yes', 'Somewhat', 'No', 'N/A',
+        ], false);
         $add($sectionC, '24', 'Do you understand the difference between stock broker and merchant banker?', 'radio', [
-            'Yes', 'Somewhat', 'No',
-        ]);
+            'Yes', 'Somewhat', 'No', 'N/A',
+        ], false);
         $add($sectionC, '25', 'Do you understand the difference between ASBA and C-ASBA?', 'radio', [
-            'Yes', 'Somewhat', 'No',
-        ]);
+            'Yes', 'Somewhat', 'No', 'N/A',
+        ], false);
         $add($sectionC, '26', 'In your opinion, what is the biggest barrier to youth participation in the capital market? (Choose the most relevant option)', 'radio', [
             'Lack of knowledge / awareness',
             'Lack of capital / savings',
@@ -147,7 +148,8 @@ class SurveyQuestionnaireSeeder extends Seeder
             'Complex process',
             'Lack of trust',
             ['text' => 'Other', 'other' => 1],
-        ]);
+            'N/A',
+        ], false);
 
         $this->command?->info('GMW-2026 questionnaire seeded successfully.');
     }

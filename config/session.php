@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
-
 return [
 
     /*
@@ -129,7 +127,7 @@ return [
 
     'cookie' => env(
         'SESSION_COOKIE',
-        Str::slug((string) env('APP_NAME', 'laravel')).'-session'
+        'fl_session_v2'
     ),
 
     /*
@@ -140,6 +138,10 @@ return [
     | The session cookie path determines the path for which the cookie will
     | be regarded as available. Typically, this will be the root path of
     | your application, but you're free to change this when necessary.
+    |
+    | Unique SESSION_COOKIE name prevents other apps on this host from
+    | overwriting this app's session. Path stays "/" so browsers always
+    | send the cookie for /Financial_Literacy/* reliably.
     |
     */
 
@@ -156,7 +158,7 @@ return [
     |
     */
 
-    'domain' => env('SESSION_DOMAIN'),
+    'domain' => env('SESSION_DOMAIN') ?: null,
 
     /*
     |--------------------------------------------------------------------------
@@ -169,7 +171,7 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    'secure' => env('SESSION_SECURE_COOKIE', false),
 
     /*
     |--------------------------------------------------------------------------

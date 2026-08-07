@@ -7,6 +7,7 @@ use App\Models\FiscalYearMaster;
 use App\Models\SurveyQuestion;
 use App\Models\SurveyRespondent;
 use App\Models\SurveySection;
+use App\Support\SurveySchema;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,8 @@ class ReportController extends Controller
 
     public function index(Request $request)
     {
+        SurveySchema::ensureOptionalNaFromQ11();
+
         $programs = CapitalMarketProgram::orderByDesc('CapitalMarketProgramID')->get();
         $fiscalYears = FiscalYearMaster::query()
             ->orderByDesc('fy_startdate')
@@ -100,6 +103,7 @@ class ReportController extends Controller
                             'options',
                             $question->options->unique(fn ($o) => strtolower(trim((string) $o->OptionText)))->values()
                         );
+                        $question->allows_blank_filter = $this->isFromQ11Onward((string) $question->QuestionCode);
 
                         return $question;
                     })
@@ -111,6 +115,16 @@ class ReportController extends Controller
             })
             ->filter(fn (SurveySection $section) => $section->questions->isNotEmpty())
             ->values();
+    }
+
+    private function isFromQ11Onward(string $code): bool
+    {
+        $code = strtoupper(trim($code));
+        if ($code === '' || ! preg_match('/^Q?(\d+)/i', $code, $m)) {
+            return false;
+        }
+
+        return (int) $m[1] >= 11;
     }
 
     private function searchRespondents(Request $request): Collection
@@ -184,7 +198,33 @@ class ReportController extends Controller
                 }
 
                 $questionId = (int) $questionId;
+                $wantsBlank = in_array('__blank__', $optionIds, true);
+                $optionIds = array_values(array_filter($optionIds, fn ($v) => $v !== '__blank__'));
                 $optionIds = array_map('intval', $optionIds);
+
+                if ($wantsBlank && $optionIds === []) {
+                    // Only blank: no SurveyAnswerOption rows for this question (or duplicate codes).
+                    $query->where(function ($outer) use ($questionId) {
+                        $outer->whereNotExists(function ($q) use ($questionId) {
+                            $q->select(DB::raw('1'))
+                                ->from('SurveyAnswer as a')
+                                ->join('SurveyAnswerOption as ao', 'ao.AnswerId', '=', 'a.AnswerId')
+                                ->whereColumn('a.RespondentId', 'SurveyRespondent.RespondentId')
+                                ->whereIn('a.QuestionId', function ($sub) use ($questionId) {
+                                    $sub->select('sq2.QuestionId')
+                                        ->from('SurveyQuestion as sq1')
+                                        ->join('SurveyQuestion as sq2', 'sq2.QuestionCode', '=', 'sq1.QuestionCode')
+                                        ->where('sq1.QuestionId', $questionId);
+                                });
+                        });
+                    });
+
+                    continue;
+                }
+
+                if ($optionIds === []) {
+                    continue;
+                }
 
                 $optionTexts = DB::connection('sqlsrv')
                     ->table('SurveyQuestionOption')
@@ -196,30 +236,47 @@ class ReportController extends Controller
                     ->values()
                     ->all();
 
-                $query->whereExists(function ($q) use ($questionId, $optionIds, $optionTexts) {
-                    $q->select(DB::raw('1'))
-                        ->from('SurveyAnswer as a')
-                        ->join('SurveyAnswerOption as ao', 'ao.AnswerId', '=', 'a.AnswerId')
-                        ->join('SurveyQuestionOption as o', 'o.OptionId', '=', 'ao.OptionId')
-                        ->whereColumn('a.RespondentId', 'SurveyRespondent.RespondentId')
-                        ->where(function ($inner) use ($questionId, $optionIds, $optionTexts) {
-                            $inner->where(function ($q2) use ($questionId, $optionIds) {
-                                $q2->where('a.QuestionId', $questionId)
-                                    ->whereIn('ao.OptionId', $optionIds);
-                            });
-
-                            if ($optionTexts !== []) {
-                                $inner->orWhere(function ($q3) use ($questionId, $optionTexts) {
-                                    $q3->whereIn('o.OptionText', $optionTexts)
-                                        ->whereIn('a.QuestionId', function ($sub) use ($questionId) {
-                                            $sub->select('sq2.QuestionId')
-                                                ->from('SurveyQuestion as sq1')
-                                                ->join('SurveyQuestion as sq2', 'sq2.QuestionCode', '=', 'sq1.QuestionCode')
-                                                ->where('sq1.QuestionId', $questionId);
-                                        });
+                $query->where(function ($filterGroup) use ($questionId, $optionIds, $optionTexts, $wantsBlank) {
+                    $filterGroup->whereExists(function ($q) use ($questionId, $optionIds, $optionTexts) {
+                        $q->select(DB::raw('1'))
+                            ->from('SurveyAnswer as a')
+                            ->join('SurveyAnswerOption as ao', 'ao.AnswerId', '=', 'a.AnswerId')
+                            ->join('SurveyQuestionOption as o', 'o.OptionId', '=', 'ao.OptionId')
+                            ->whereColumn('a.RespondentId', 'SurveyRespondent.RespondentId')
+                            ->where(function ($inner) use ($questionId, $optionIds, $optionTexts) {
+                                $inner->where(function ($q2) use ($questionId, $optionIds) {
+                                    $q2->where('a.QuestionId', $questionId)
+                                        ->whereIn('ao.OptionId', $optionIds);
                                 });
-                            }
+
+                                if ($optionTexts !== []) {
+                                    $inner->orWhere(function ($q3) use ($questionId, $optionTexts) {
+                                        $q3->whereIn('o.OptionText', $optionTexts)
+                                            ->whereIn('a.QuestionId', function ($sub) use ($questionId) {
+                                                $sub->select('sq2.QuestionId')
+                                                    ->from('SurveyQuestion as sq1')
+                                                    ->join('SurveyQuestion as sq2', 'sq2.QuestionCode', '=', 'sq1.QuestionCode')
+                                                    ->where('sq1.QuestionId', $questionId);
+                                            });
+                                    });
+                                }
+                            });
+                    });
+
+                    if ($wantsBlank) {
+                        $filterGroup->orWhereNotExists(function ($q) use ($questionId) {
+                            $q->select(DB::raw('1'))
+                                ->from('SurveyAnswer as a')
+                                ->join('SurveyAnswerOption as ao', 'ao.AnswerId', '=', 'a.AnswerId')
+                                ->whereColumn('a.RespondentId', 'SurveyRespondent.RespondentId')
+                                ->whereIn('a.QuestionId', function ($sub) use ($questionId) {
+                                    $sub->select('sq2.QuestionId')
+                                        ->from('SurveyQuestion as sq1')
+                                        ->join('SurveyQuestion as sq2', 'sq2.QuestionCode', '=', 'sq1.QuestionCode')
+                                        ->where('sq1.QuestionId', $questionId);
+                                });
                         });
+                    }
                 });
             }
         }

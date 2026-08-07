@@ -27,6 +27,8 @@ class QuestionnaireController extends Controller
 
     public function create()
     {
+        SurveySchema::ensureOptionalNaFromQ11();
+
         return view('questionnaire.form', [
             'sections' => $this->loadFormStructure(),
             'programs' => $this->loadPrograms(),
@@ -53,8 +55,22 @@ class QuestionnaireController extends Controller
 
     public function edit(Request $request)
     {
+        SurveySchema::ensureOptionalNaFromQ11();
+
         $id = SecureId::decode($request->input('token'));
         $respondent = SurveyRespondent::with(['answers.answerOptions'])->findOrFail($id);
+
+        // Program may live on SurveyAnswer even when respondent column is null.
+        if (! $respondent->CapitalMarketProgramID) {
+            $programId = DB::connection('sqlsrv')
+                ->table('SurveyAnswer')
+                ->where('RespondentId', $respondent->RespondentId)
+                ->whereNotNull('CapitalMarketProgramID')
+                ->value('CapitalMarketProgramID');
+            if ($programId) {
+                $respondent->CapitalMarketProgramID = (int) $programId;
+            }
+        }
 
         return view('questionnaire.form', [
             'sections' => $this->loadFormStructure(),
@@ -68,6 +84,8 @@ class QuestionnaireController extends Controller
 
     public function show(Request $request)
     {
+        SurveySchema::ensureOptionalNaFromQ11();
+
         $id = SecureId::decode($request->input('token'));
         $respondent = SurveyRespondent::with(['answers.answerOptions.option'])->findOrFail($id);
         $sections = $this->loadFormStructure();
@@ -301,6 +319,8 @@ class QuestionnaireController extends Controller
                         return true;
                     })
                     ->map(function (SurveyQuestion $question) {
+                        $this->normalizeQuestionRuntimeFlags($question);
+
                         $question->setRelation(
                             'options',
                             $question->options->unique(function ($option) {
@@ -343,7 +363,35 @@ class QuestionnaireController extends Controller
 
                 return true;
             })
+            ->map(function (SurveyQuestion $question) {
+                $this->normalizeQuestionRuntimeFlags($question);
+
+                return $question;
+            })
             ->values();
+    }
+
+    /**
+     * Apply known form rules in-memory so create/edit/validate behave correctly
+     * even before SurveySchema finishes patching SurveyQuestion rows.
+     */
+    private function normalizeQuestionRuntimeFlags(SurveyQuestion $question): void
+    {
+        $code = strtoupper(trim((string) $question->QuestionCode));
+        if ($code === '') {
+            return;
+        }
+
+        if (! $this->isEffectivelyRequired($question)) {
+            $question->IsRequired = false;
+        }
+
+        if (preg_match('/^Q?(\d+)([A-Z]?)$/i', $code, $m)
+            && ($m[2] ?? '') === ''
+            && in_array((int) $m[1], [10, 11, 12, 13, 15, 16, 17], true)) {
+            $question->QuestionType = 'checkbox';
+            $question->IsRequired = false;
+        }
     }
 
     private function validateAnswers(Request $request): void
@@ -363,7 +411,7 @@ class QuestionnaireController extends Controller
         $firstMissingId = null;
 
         foreach ($questions as $question) {
-            if (! $question->IsRequired) {
+            if (! $this->isEffectivelyRequired($question)) {
                 continue;
             }
 
@@ -425,6 +473,32 @@ class QuestionnaireController extends Controller
         }
     }
 
+    /**
+     * Required flag with known optional codes as a safety net
+     * (covers DB rows that have not yet been patched by SurveySchema).
+     */
+    private function isEffectivelyRequired(SurveyQuestion $question): bool
+    {
+        if (! $question->IsRequired) {
+            return false;
+        }
+
+        $code = strtoupper(trim((string) $question->QuestionCode));
+        if ($code === '') {
+            return true;
+        }
+
+        if (in_array($code, ['1', 'Q1', '4', 'Q4', '5', 'Q5', '9A', '9B', '10', 'Q10'], true)) {
+            return false;
+        }
+
+        if (preg_match('/^Q?(\d+)/i', $code, $m) && (int) $m[1] >= 11) {
+            return false;
+        }
+
+        return true;
+    }
+
     private function resolveParticipantName(Request $request): ?string
     {
         $nameFromRequest = trim((string) $request->input('participant_name', ''));
@@ -464,36 +538,82 @@ class QuestionnaireController extends Controller
 
     private function mapExistingAnswers(SurveyRespondent $respondent): array
     {
+        $questionsById = SurveyQuestion::with('options')->get()->keyBy('QuestionId');
         $mapped = [];
 
         foreach ($respondent->answers as $answer) {
-            $qid = $answer->QuestionId;
-            $optionIds = $answer->answerOptions->pluck('OptionId')->all();
+            $question = $questionsById->get($answer->QuestionId);
+            $qid = (int) $answer->QuestionId;
+            $code = strtoupper(trim((string) ($question->QuestionCode ?? '')));
+
+            $optionIds = array_values(array_map(
+                'intval',
+                $answer->answerOptions->pluck('OptionId')->all()
+            ));
             $others = [];
 
             foreach ($answer->answerOptions as $ao) {
-                if ($ao->OtherText !== null && $ao->OtherText !== '') {
-                    $others[$ao->OptionId] = $ao->OtherText;
+                if ($ao->OtherText !== null && trim((string) $ao->OtherText) !== '') {
+                    $others[(int) $ao->OptionId] = $ao->OtherText;
                 }
             }
 
-            if (count($optionIds) > 1) {
-                $mapped[$qid] = [
+            // Use the question's real type — never infer from option count.
+            // (A single checked checkbox used to be mistagged as "single" and
+            // failed to restore on the edit form.)
+            if ($question && $question->isMulti()) {
+                $entry = [
                     'type' => 'multi',
                     'values' => $optionIds,
                     'other' => $others,
                 ];
-            } elseif (count($optionIds) === 1) {
-                $mapped[$qid] = [
+            } elseif ($question && $question->isSingle()) {
+                $entry = [
                     'type' => 'single',
-                    'value' => $optionIds[0],
+                    'value' => $optionIds[0] ?? null,
+                    'values' => $optionIds,
                     'other' => $others,
                 ];
+            } elseif ($optionIds !== []) {
+                $entry = count($optionIds) > 1
+                    ? ['type' => 'multi', 'values' => $optionIds, 'other' => $others]
+                    : [
+                        'type' => 'single',
+                        'value' => $optionIds[0],
+                        'values' => $optionIds,
+                        'other' => $others,
+                    ];
             } else {
-                $mapped[$qid] = [
+                $entry = [
                     'type' => 'text',
                     'value' => $answer->AnswerText,
                 ];
+            }
+
+            $mapped[$qid] = $entry;
+
+            // Also key by QuestionCode so edit survives duplicate QuestionId rows.
+            if ($code === '') {
+                continue;
+            }
+
+            if (! isset($mapped[$code])) {
+                $mapped[$code] = $entry;
+                continue;
+            }
+
+            if (($entry['type'] ?? '') === 'multi' || ($mapped[$code]['type'] ?? '') === 'multi') {
+                $merged = array_values(array_unique(array_merge(
+                    array_map('intval', $mapped[$code]['values'] ?? []),
+                    $optionIds
+                )));
+                $mapped[$code] = [
+                    'type' => 'multi',
+                    'values' => $merged,
+                    'other' => ($mapped[$code]['other'] ?? []) + $others,
+                ];
+            } elseif (($mapped[$code]['value'] ?? null) === null && ($entry['value'] ?? null) !== null) {
+                $mapped[$code] = $entry;
             }
         }
 
@@ -506,7 +626,7 @@ class QuestionnaireController extends Controller
      */
     private function mapAnswersForDocument(SurveyRespondent $respondent): array
     {
-        $questionsById = SurveyQuestion::query()->get()->keyBy('QuestionId');
+        $questionsById = SurveyQuestion::with('options')->get()->keyBy('QuestionId');
         $mapped = [];
 
         foreach ($respondent->answers as $answer) {
@@ -536,8 +656,17 @@ class QuestionnaireController extends Controller
                 }
             }
 
+            $type = 'text';
+            if ($question && $question->isMulti()) {
+                $type = 'multi';
+            } elseif ($question && $question->isSingle()) {
+                $type = 'single';
+            } elseif ($optionIds !== []) {
+                $type = count($optionIds) > 1 ? 'multi' : 'single';
+            }
+
             $entry = [
-                'type' => count($optionIds) ? (count($optionIds) > 1 ? 'multi' : 'single') : 'text',
+                'type' => $type,
                 'values' => $optionIds,
                 'texts' => $optionTexts,
                 'other' => $others,
@@ -552,6 +681,9 @@ class QuestionnaireController extends Controller
                 $mapped[$code]['values'] = array_values(array_unique(array_merge($mapped[$code]['values'], $optionIds)));
                 $mapped[$code]['texts'] = array_values(array_unique(array_merge($mapped[$code]['texts'], $optionTexts)));
                 $mapped[$code]['other'] = $mapped[$code]['other'] + $others;
+                if (($mapped[$code]['type'] ?? '') !== 'multi' && count($mapped[$code]['values']) > 1) {
+                    $mapped[$code]['type'] = 'multi';
+                }
                 if (($mapped[$code]['value'] ?? null) === null && $answer->AnswerText) {
                     $mapped[$code]['value'] = $answer->AnswerText;
                 }

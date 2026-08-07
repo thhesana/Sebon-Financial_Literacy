@@ -7,12 +7,18 @@ use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProgramMasterController;
 use App\Http\Controllers\QuestionnaireController;
 use App\Http\Controllers\ReportController;
+use Illuminate\Support\Facades\Route;
 
 // Login
 Route::get('/', [AuthController::class, 'showLoginForm'])->name('login');
 Route::get('/login', [AuthController::class, 'showLoginForm']);
 Route::post('/login', [AuthController::class, 'login'])->name('login.post');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+// Mistaken "/.../login" URLs (e.g. /questionnaire/login) → real login
+Route::get('/{section}/login', function () {
+    return redirect()->route('login');
+})->where('section', 'dashboard|program-master|fy-master|questionnaire|reports|changepassword');
 
 // First-time / forced password change (before full login session)
 Route::get('/changepassword', [PasswordController::class, 'showForm'])->name('changepassword');
@@ -69,4 +75,17 @@ Route::middleware(['checklogin'])->group(function () {
         ->name('reports.search');
     Route::post('/reports/clear', [ReportController::class, 'clear'])
         ->name('reports.clear');
+});
+
+// Unknown URLs: send logged-in users to dashboard, guests to login (no bare 404)
+Route::fallback(function () {
+    if (session('loggedin')) {
+        return redirect()
+            ->route('dashboard')
+            ->with('error', 'The page you requested was not found.');
+    }
+
+    return redirect()
+        ->route('login')
+        ->with('error', 'The page you requested was not found.');
 });

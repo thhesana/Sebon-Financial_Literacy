@@ -67,13 +67,25 @@
                                     @endif
                                 </span>
                             @endforeach
+                            @php
+                                $anyChecked = collect($question->options)->contains(function ($option) use ($selectedIds, $selectedTexts) {
+                                    return in_array((int) $option->OptionId, $selectedIds, true)
+                                        || in_array(strtolower(trim((string) $option->OptionText)), $selectedTexts, true);
+                                });
+                            @endphp
+                            @if(! $anyChecked)
+                                <span class="doc-option doc-blank-answer">
+                                    <span class="doc-mark" aria-hidden="true">☐</span>
+                                    <span class="doc-option-label text-muted"><em>Left blank</em></span>
+                                </span>
+                            @endif
                         </div>
                     @else
                         <div class="doc-blank">
                             @if($textValue !== '')
                                 <span class="doc-filled">{{ $textValue }}</span>
                             @else
-                                <span class="doc-underline">————————————————————————</span>
+                                <span class="doc-underline text-muted"><em>Left blank</em></span>
                             @endif
                         </div>
                     @endif
