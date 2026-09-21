@@ -7,6 +7,7 @@ use App\Models\FiscalYearMaster;
 use App\Support\SecureId;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ProgramMasterController extends Controller
 {
@@ -69,7 +70,24 @@ class ProgramMasterController extends Controller
         $id = SecureId::decode($request->input('token'));
         $program = CapitalMarketProgram::findOrFail($id);
 
-        $data = $this->validated($request, $program);
+        try {
+            $data = $this->validated($request, $program);
+        } catch (ValidationException $e) {
+            $request->flash();
+            $ranges = $request->input('dates');
+            if (! is_array($ranges) || $ranges === []) {
+                $ranges = $program->dateRanges();
+                if ($ranges === []) {
+                    $ranges = [['StartDate' => '', 'EndDate' => '']];
+                }
+            }
+
+            return view('program.edit', [
+                'program' => $program,
+                'secureToken' => SecureId::encode($program->CapitalMarketProgramID),
+                'dateRanges' => $ranges,
+            ])->withErrors($e->validator);
+        }
 
         $program->update([
             'CapitalMarketProgramName' => $data['CapitalMarketProgramName'],

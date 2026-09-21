@@ -39,11 +39,18 @@ class SurveyQuestionnaireSeeder extends Seeder
         $order = 0;
         $add = function (int $sectionId, string $code, string $text, string $type, array $options = [], bool $required = true, ?int $parentQuestionId = null, ?int $parentTriggerOptionId = null) use (&$order, $now) {
             $order++;
+            // Live DB CHECK constraint expects SingleChoice / MultiChoice / Text (not radio/checkbox).
+            $normalizedType = match (strtolower($type)) {
+                'checkbox', 'multi', 'multichoice' => 'MultiChoice',
+                'radio', 'single', 'singlechoice' => 'SingleChoice',
+                'textarea', 'longtext' => 'Text',
+                default => 'Text',
+            };
             $qid = DB::table('SurveyQuestion')->insertGetId([
                 'SurveySectionId' => $sectionId,
                 'QuestionCode' => $code,
                 'QuestionText' => $text,
-                'QuestionType' => $type,
+                'QuestionType' => $normalizedType,
                 'IsRequired' => $required ? 1 : 0,
                 'DisplayOrder' => $order,
                 'ParentQuestionId' => $parentQuestionId,
@@ -80,9 +87,9 @@ class SurveyQuestionnaireSeeder extends Seeder
         $add($sectionA, '7', 'Education Stream', 'radio', [
             'Management / Commerce', 'Science', 'Humanities', ['text' => 'Others', 'other' => 1], 'N/A',
         ]);
-        $add($sectionA, '8', 'Current Professional Status', 'radio', [
+        $add($sectionA, '8', 'Current Professional Status', 'checkbox', [
             'Student', 'Employed', 'Self-Employed', 'Unemployed', 'N/A',
-        ]);
+        ], false);
         $add($sectionA, '9a', 'Profession of Parents — Father', 'text', [], false);
         $add($sectionA, '9b', 'Profession of Parents — Mother', 'text', [], false);
         $add($sectionA, '10', 'Is anyone of your family involved with foreign employment?', 'checkbox', [
@@ -99,7 +106,7 @@ class SurveyQuestionnaireSeeder extends Seeder
         $add($sectionB, '13', 'Are you aware of the following financial instruments? (Mark all that apply)', 'checkbox', [
             'IPO (Initial Public Offering)', 'Mutual Fund', 'Debenture / Bond', 'None of the above', 'N/A',
         ], false);
-        $add($sectionB, '14', 'Which of the following financial instruments is riskier?', 'radio', [
+        $add($sectionB, '14', 'Which of the following financial instruments is riskier? (Mark all that apply)', 'checkbox', [
             'IPO (Initial Public Offering)', 'Mutual Fund', 'Debenture / Bond', 'None of the above', 'N/A',
         ], false);
         $add($sectionB, '15', 'Have you ever applied for any of the following? (Mark all that apply)', 'checkbox', [
@@ -123,7 +130,7 @@ class SurveyQuestionnaireSeeder extends Seeder
             ->value('OptionId');
         $add($sectionB, '19a', 'If Yes, conducted by', 'text', [], false, $q19, $yesOptionId);
 
-        $add($sectionC, '20', 'How would you rate your overall knowledge of the capital market?', 'radio', [
+        $add($sectionC, '20', 'How would you rate your overall knowledge of the capital market?', 'checkbox', [
             'No knowledge', 'Basic knowledge', 'Moderate knowledge', 'Advanced knowledge', 'N/A',
         ], false);
         $add($sectionC, '21', 'Do you know the primary function of the Nepal Stock Exchange (NEPSE)?', 'radio', [
@@ -141,7 +148,7 @@ class SurveyQuestionnaireSeeder extends Seeder
         $add($sectionC, '25', 'Do you understand the difference between ASBA and C-ASBA?', 'radio', [
             'Yes', 'Somewhat', 'No', 'N/A',
         ], false);
-        $add($sectionC, '26', 'In your opinion, what is the biggest barrier to youth participation in the capital market? (Choose the most relevant option)', 'radio', [
+        $add($sectionC, '26', 'In your opinion, what is the biggest barrier to youth participation in the capital market? (Mark all that apply)', 'checkbox', [
             'Lack of knowledge / awareness',
             'Lack of capital / savings',
             'Fear of risk / loss',

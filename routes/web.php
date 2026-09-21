@@ -42,6 +42,11 @@ Route::middleware(['checklogin'])->group(function () {
         ->name('program-master.edit');
     Route::post('/program-master/update', [ProgramMasterController::class, 'update'])
         ->name('program-master.update');
+    Route::get('/program-master/{action}', function () {
+        return redirect()
+            ->route('program-master')
+            ->with('error', 'Please open that program again from the list.');
+    })->where('action', 'edit|update|store');
 
     Route::get('/fy-master', [FyMasterController::class, 'index'])
         ->name('fy-master');
@@ -53,6 +58,11 @@ Route::middleware(['checklogin'])->group(function () {
         ->name('fy-master.edit');
     Route::post('/fy-master/update', [FyMasterController::class, 'update'])
         ->name('fy-master.update');
+    Route::get('/fy-master/{action}', function () {
+        return redirect()
+            ->route('fy-master')
+            ->with('error', 'Please open that fiscal year again from the list.');
+    })->where('action', 'edit|update|store');
 
     Route::get('/questionnaire', [QuestionnaireController::class, 'index'])
         ->name('questionnaire');
@@ -68,6 +78,12 @@ Route::middleware(['checklogin'])->group(function () {
         ->name('questionnaire.update');
     Route::post('/questionnaire/delete', [QuestionnaireController::class, 'destroy'])
         ->name('questionnaire.destroy');
+    // POST-only pages: refresh/back as GET must not 405
+    Route::get('/questionnaire/{action}', function () {
+        return redirect()
+            ->route('questionnaire')
+            ->with('error', 'Please open that survey again from the list.');
+    })->where('action', 'edit|view|update|delete|store');
 
     Route::get('/reports', [ReportController::class, 'index'])
         ->name('reports');

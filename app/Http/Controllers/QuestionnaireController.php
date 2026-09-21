@@ -12,9 +12,12 @@ use App\Support\SecureId;
 use App\Support\SurveySchema;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
+use Throwable;
 
 class QuestionnaireController extends Controller
 {
@@ -27,26 +30,27 @@ class QuestionnaireController extends Controller
 
     public function create()
     {
-        SurveySchema::ensureOptionalNaFromQ11();
-
-        return view('questionnaire.form', [
-            'sections' => $this->loadFormStructure(),
-            'programs' => $this->loadPrograms(),
-            'respondent' => null,
-            'answers' => [],
-            'mode' => 'create',
-        ]);
+        return $this->renderForm('create');
     }
 
     public function store(Request $request)
     {
-        $this->validateAnswers($request);
+        $this->validateAnswers($request, route('questionnaire.create'));
 
-        $this->insertViaStoredProcedure(
-            $this->resolveParticipantName($request),
-            $this->buildAnswersJson($request),
-            (int) $request->input('CapitalMarketProgramID')
-        );
+        try {
+            $this->insertViaStoredProcedure(
+                $this->resolveParticipantName($request),
+                $this->buildAnswersJson($request),
+                (int) $request->input('CapitalMarketProgramID')
+            );
+        } catch (Throwable $e) {
+            Log::error('Survey store failed: '.$e->getMessage(), ['exception' => $e]);
+
+            return redirect()
+                ->route('questionnaire.create')
+                ->withInput()
+                ->with('error', 'Could not save the survey. Please try again. If it keeps failing, contact the administrator.');
+        }
 
         return redirect()
             ->route('questionnaire')
@@ -55,31 +59,10 @@ class QuestionnaireController extends Controller
 
     public function edit(Request $request)
     {
-        SurveySchema::ensureOptionalNaFromQ11();
-
         $id = SecureId::decode($request->input('token'));
         $respondent = SurveyRespondent::with(['answers.answerOptions'])->findOrFail($id);
 
-        // Program may live on SurveyAnswer even when respondent column is null.
-        if (! $respondent->CapitalMarketProgramID) {
-            $programId = DB::connection('sqlsrv')
-                ->table('SurveyAnswer')
-                ->where('RespondentId', $respondent->RespondentId)
-                ->whereNotNull('CapitalMarketProgramID')
-                ->value('CapitalMarketProgramID');
-            if ($programId) {
-                $respondent->CapitalMarketProgramID = (int) $programId;
-            }
-        }
-
-        return view('questionnaire.form', [
-            'sections' => $this->loadFormStructure(),
-            'programs' => $this->loadPrograms(),
-            'respondent' => $respondent,
-            'answers' => $this->mapExistingAnswers($respondent),
-            'mode' => 'edit',
-            'secureToken' => SecureId::encode($id),
-        ]);
+        return $this->renderForm('edit', $respondent);
     }
 
     public function show(Request $request)
@@ -98,20 +81,40 @@ class QuestionnaireController extends Controller
     public function update(Request $request)
     {
         $id = SecureId::decode($request->input('token'));
-        $respondent = SurveyRespondent::findOrFail($id);
-        $this->validateAnswers($request);
+        $respondent = SurveyRespondent::with(['answers.answerOptions'])->findOrFail($id);
 
-        // Insert via SP first (it runs its own transaction), then remove the old response.
-        $this->insertViaStoredProcedure(
-            $this->resolveParticipantName($request),
-            $this->buildAnswersJson($request),
-            (int) $request->input('CapitalMarketProgramID')
-        );
+        try {
+            $this->validateAnswers($request);
+        } catch (ValidationException $e) {
+            // Edit form is POST-only; re-render instead of redirecting GET to /questionnaire/edit (405).
+            $request->flash();
 
-        DB::connection('sqlsrv')->transaction(function () use ($respondent) {
-            $this->deleteAnswers($respondent);
-            $respondent->delete();
-        });
+            return $this->renderForm('edit', $respondent)->withErrors($e->validator);
+        }
+
+        try {
+            // SP commits its own transaction; delete old only after the new insert succeeds.
+            $this->insertViaStoredProcedure(
+                $this->resolveParticipantName($request),
+                $this->buildAnswersJson($request),
+                (int) $request->input('CapitalMarketProgramID')
+            );
+
+            DB::connection('sqlsrv')->transaction(function () use ($respondent) {
+                $this->deleteAnswers($respondent);
+                $respondent->delete();
+            });
+        } catch (Throwable $e) {
+            Log::error('Survey update failed: '.$e->getMessage(), [
+                'respondent_id' => $id,
+                'exception' => $e,
+            ]);
+
+            $request->flash();
+
+            return $this->renderForm('edit', $respondent)
+                ->with('error', 'Could not update the survey. Please try again. If it keeps failing, contact the administrator.');
+        }
 
         return redirect()
             ->route('questionnaire')
@@ -123,14 +126,51 @@ class QuestionnaireController extends Controller
         $id = SecureId::decode($request->input('token'));
         $respondent = SurveyRespondent::findOrFail($id);
 
-        DB::connection('sqlsrv')->transaction(function () use ($respondent) {
-            $this->deleteAnswers($respondent);
-            $respondent->delete();
-        });
+        try {
+            DB::connection('sqlsrv')->transaction(function () use ($respondent) {
+                $this->deleteAnswers($respondent);
+                $respondent->delete();
+            });
+        } catch (Throwable $e) {
+            Log::error('Survey delete failed: '.$e->getMessage(), [
+                'respondent_id' => $id,
+                'exception' => $e,
+            ]);
+
+            return redirect()
+                ->route('questionnaire')
+                ->with('error', 'Could not delete the survey. Please try again.');
+        }
 
         return redirect()
             ->route('questionnaire')
             ->with('success', 'Survey deleted successfully.');
+    }
+
+    /**
+     * Render create/edit form. Attaches program from SurveyAnswer only when that column exists.
+     */
+    private function renderForm(string $mode, ?SurveyRespondent $respondent = null)
+    {
+        SurveySchema::ensureOptionalNaFromQ11();
+
+        if ($respondent && ! $respondent->CapitalMarketProgramID) {
+            $programId = $this->programIdFromAnswers($respondent);
+            if ($programId) {
+                $respondent->CapitalMarketProgramID = $programId;
+            }
+        }
+
+        return view('questionnaire.form', [
+            'sections' => $this->loadFormStructure(),
+            'programs' => $this->loadPrograms(),
+            'respondent' => $respondent,
+            'answers' => $respondent ? $this->mapExistingAnswers($respondent) : [],
+            'mode' => $mode,
+            'secureToken' => $respondent
+                ? SecureId::encode($respondent->RespondentId)
+                : null,
+        ]);
     }
 
     /**
@@ -172,17 +212,15 @@ class QuestionnaireController extends Controller
     }
 
     /**
-     * Resolve program for a respondent from SurveyAnswer.CapitalMarketProgramID,
+     * Resolve program for a respondent from SurveyRespondent, then legacy SurveyAnswer column,
      * falling back to the current active program.
      */
     private function resolveProgramForRespondent(?SurveyRespondent $respondent = null): ?CapitalMarketProgram
     {
         if ($respondent) {
-            $programId = DB::connection('sqlsrv')
-                ->table('SurveyAnswer')
-                ->where('RespondentId', $respondent->RespondentId)
-                ->whereNotNull('CapitalMarketProgramID')
-                ->value('CapitalMarketProgramID');
+            $programId = $respondent->CapitalMarketProgramID
+                ? (int) $respondent->CapitalMarketProgramID
+                : $this->programIdFromAnswers($respondent);
 
             if ($programId) {
                 $program = CapitalMarketProgram::find($programId);
@@ -193,6 +231,30 @@ class QuestionnaireController extends Controller
         }
 
         return $this->loadPrograms()->first();
+    }
+
+    /**
+     * Legacy DBs may store program id on SurveyAnswer; newer ones only on SurveyRespondent.
+     */
+    private function programIdFromAnswers(SurveyRespondent $respondent): ?int
+    {
+        if (! SurveySchema::answerHasProgramColumn()) {
+            return null;
+        }
+
+        try {
+            $programId = DB::connection('sqlsrv')
+                ->table('SurveyAnswer')
+                ->where('RespondentId', $respondent->RespondentId)
+                ->whereNotNull('CapitalMarketProgramID')
+                ->value('CapitalMarketProgramID');
+
+            return $programId ? (int) $programId : null;
+        } catch (Throwable $e) {
+            Log::warning('Could not read SurveyAnswer.CapitalMarketProgramID: '.$e->getMessage());
+
+            return null;
+        }
     }
 
     /**
@@ -388,22 +450,27 @@ class QuestionnaireController extends Controller
 
         if (preg_match('/^Q?(\d+)([A-Z]?)$/i', $code, $m)
             && ($m[2] ?? '') === ''
-            && in_array((int) $m[1], [10, 11, 12, 13, 15, 16, 17], true)) {
-            $question->QuestionType = 'checkbox';
+            && in_array((int) $m[1], [8, 10, 11, 12, 13, 14, 15, 16, 17, 20, 26], true)) {
+            $question->QuestionType = SurveySchema::TYPE_MULTI;
             $question->IsRequired = false;
         }
     }
 
-    private function validateAnswers(Request $request): void
+    private function validateAnswers(Request $request, ?string $redirectTo = null): void
     {
         $questions = $this->activeQuestions();
         $posted = $request->input('answers', []);
 
         $rules = [
-            'CapitalMarketProgramID' => 'required|integer',
+            'CapitalMarketProgramID' => [
+                'required',
+                'integer',
+                Rule::exists(CapitalMarketProgram::class, 'CapitalMarketProgramID'),
+            ],
         ];
         $messages = [
             'CapitalMarketProgramID.required' => 'Please select a Capital Market Program.',
+            'CapitalMarketProgramID.exists' => 'The selected Capital Market Program is invalid.',
         ];
         $attributes = [
             'CapitalMarketProgramID' => 'Capital Market Program',
@@ -464,13 +531,33 @@ class QuestionnaireController extends Controller
                 }
             }
 
-            $redirectUrl = url()->previous();
+            // Prefer an explicit GET-safe URL (create). Avoid previous() for POST-only edit/view.
+            $redirectUrl = $redirectTo ?: route('questionnaire.create');
+            $previous = url()->previous();
+            if (! $redirectTo && $previous && ! $this->isPostOnlyQuestionnaireUrl($previous)) {
+                $redirectUrl = $previous;
+            }
+
             if ($jumpId) {
-                $redirectUrl .= '#question-'.$jumpId;
+                $redirectUrl = preg_replace('/#.*$/', '', $redirectUrl).'#question-'.$jumpId;
             }
 
             throw (new ValidationException($validator))->redirectTo($redirectUrl);
         }
+    }
+
+    private function isPostOnlyQuestionnaireUrl(string $url): bool
+    {
+        $path = parse_url($url, PHP_URL_PATH) ?: '';
+        $path = rtrim($path, '/');
+
+        foreach (['/questionnaire/edit', '/questionnaire/view', '/questionnaire/update', '/questionnaire/delete', '/questionnaire/store'] as $needle) {
+            if (str_ends_with($path, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

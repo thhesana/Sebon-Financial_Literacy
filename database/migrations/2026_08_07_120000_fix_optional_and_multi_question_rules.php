@@ -37,13 +37,17 @@ return new class extends Migration
             }
         }
 
-        $multiCodes = ['10', 'Q10', '11', 'Q11', '12', 'Q12', '13', 'Q13', '15', 'Q15', '16', 'Q16', '17', 'Q17'];
+        $multiCodes = [
+            '10', 'Q10', '11', 'Q11', '12', 'Q12', '13', 'Q13',
+            '14', 'Q14', '15', 'Q15', '16', 'Q16', '17', 'Q17',
+            '26', 'Q26',
+        ];
         foreach ($multiCodes as $code) {
             $conn->table('SurveyQuestion')
                 ->where('IsActive', 1)
                 ->whereRaw('UPPER(LTRIM(RTRIM(QuestionCode))) = ?', [strtoupper($code)])
                 ->update([
-                    'QuestionType' => 'checkbox',
+                    'QuestionType' => 'MultiChoice',
                     'IsRequired' => 0,
                 ]);
         }

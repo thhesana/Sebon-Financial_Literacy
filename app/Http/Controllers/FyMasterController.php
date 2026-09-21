@@ -6,6 +6,7 @@ use App\Models\FiscalYearMaster;
 use App\Support\SecureId;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class FyMasterController extends Controller
 {
@@ -57,7 +58,16 @@ class FyMasterController extends Controller
         $id = SecureId::decode($request->input('token'));
         $year = FiscalYearMaster::findOrFail($id);
 
-        $data = $this->validated($request, $year);
+        try {
+            $data = $this->validated($request, $year);
+        } catch (ValidationException $e) {
+            $request->flash();
+
+            return view('fy.edit', [
+                'year' => $year,
+                'secureToken' => SecureId::encode($year->fiscal_year_master_id),
+            ])->withErrors($e->validator);
+        }
 
         $year->update([
             'fy' => $data['fy'],

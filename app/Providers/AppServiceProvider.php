@@ -29,5 +29,9 @@ class AppServiceProvider extends ServiceProvider
                 URL::forceScheme('http');
             }
         }
+
+        // Keep PHP GC from deleting this app's session files before Laravel lifetime.
+        $lifetimeMinutes = max(10, (int) config('session.lifetime', 120));
+        ini_set('session.gc_maxlifetime', (string) ($lifetimeMinutes * 60));
     }
 }

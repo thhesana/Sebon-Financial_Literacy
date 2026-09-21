@@ -16,7 +16,7 @@ return [
     |
     */
 
-    'driver' => env('SESSION_DRIVER', 'database'),
+    'driver' => env('SESSION_DRIVER', 'file'),
 
     /*
     |--------------------------------------------------------------------------
@@ -28,11 +28,14 @@ return [
     | to expire immediately when the browser is closed then you may
     | indicate that via the expire_on_close configuration option.
     |
+    | Floor is 10 minutes so idle CSRF/session IDs are not dropped early
+    | when this app shares a host with other projects.
+    |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    'lifetime' => max(10, (int) env('SESSION_LIFETIME', 120)),
 
-    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
+    'expire_on_close' => filter_var(env('SESSION_EXPIRE_ON_CLOSE', false), FILTER_VALIDATE_BOOLEAN),
 
     /*
     |--------------------------------------------------------------------------
@@ -125,9 +128,10 @@ return [
     |
     */
 
+    // Unique per project so other apps on the same host cannot overwrite it.
     'cookie' => env(
         'SESSION_COOKIE',
-        'fl_session_v2'
+        'financial_literacy_session'
     ),
 
     /*
@@ -135,17 +139,13 @@ return [
     | Session Cookie Path
     |--------------------------------------------------------------------------
     |
-    | The session cookie path determines the path for which the cookie will
-    | be regarded as available. Typically, this will be the root path of
-    | your application, but you're free to change this when necessary.
-    |
-    | Unique SESSION_COOKIE name prevents other apps on this host from
-    | overwriting this app's session. Path stays "/" so browsers always
-    | send the cookie for /Financial_Literacy/* reliably.
+    | Scope the cookie to this app's URL path (e.g. /Financial_Literacy) so
+    | session + CSRF stay independent of sibling projects on the same host.
+    | Falls back to the path segment of APP_URL when SESSION_PATH is unset.
     |
     */
 
-    'path' => env('SESSION_PATH', '/'),
+    'path' => env('SESSION_PATH') ?: (parse_url((string) env('APP_URL', '/'), PHP_URL_PATH) ?: '/'),
 
     /*
     |--------------------------------------------------------------------------
@@ -171,7 +171,7 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE', false),
+    'secure' => filter_var(env('SESSION_SECURE_COOKIE', false), FILTER_VALIDATE_BOOLEAN),
 
     /*
     |--------------------------------------------------------------------------
